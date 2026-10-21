@@ -49,4 +49,3 @@ PLIST
 codesign --force --deep --sign - "$APP"
 echo "$APP"
 
-\n

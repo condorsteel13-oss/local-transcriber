@@ -51,4 +51,3 @@ tiff2icns "$BUILD/AppIcon.tiff" "$ROOT/assets/AppIcon.icns"
 cp "$BASE" "$ROOT/assets/AppIcon-1024.png"
 echo "$ROOT/assets/AppIcon.icns"
 
-\n

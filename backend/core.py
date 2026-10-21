@@ -111,4 +111,3 @@ def exclusive_lock(output_root: Path, job_id: str):
         finally:
             fcntl.flock(handle, fcntl.LOCK_UN)
 
-\n
