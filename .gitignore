@@ -1,0 +1,13 @@
+.build/
+dist/
+release/
+models/
+pyannote-env/
+test-output/
+test-output-offline/
+fixtures/
+**/__pycache__/
+**/.cache/
+.DS_Store
+
+\n
