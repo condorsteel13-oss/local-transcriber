@@ -1,13 +1,25 @@
-# Local Transcriber 1.0.0
+# Local Transcriber 1.1.0
 
-The first public release turns English and French audio or video into private,
+Version 1.1.0 reorganizes every transcription into one readable folder named
+after the source recording. `Transcript.txt` and `Subtitles.srt` are the only
+files at the top level. Raw Whisper output, normalized audio, speaker timing,
+metadata, logs, checks, and resume information are kept together under
+`Technical Files`.
+
+The new structure preserves verified resume behavior and automatically adds a
+short identifier only when two recordings or setting combinations would
+otherwise use the same folder name.
+
+## Included application
+
+Local Transcriber turns English and French audio or video into private,
 timestamped transcripts on an Apple Silicon Mac. It supports batches, drag and
 drop, resumable processing, progress estimates, readable result folders, and
 optional anonymous speaker labels with pyannote Community-1.
 
 ## Installation
 
-1. Download and extract `Local-Transcriber-1.0.0-macOS-arm64.zip`.
+1. Download and extract `Local-Transcriber-1.1.0-macOS-arm64.zip`.
 2. Control-click `Install Local Transcriber.command`, choose **Open**, and follow
    the setup prompts.
 3. Open **Local Transcriber** from Applications.

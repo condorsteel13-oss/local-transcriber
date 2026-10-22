@@ -87,14 +87,14 @@ def inspect_source(source: Path, ffprobe: str, source_hash: str) -> dict:
     }
 
 
-def normalize(source: Path, job: Path, metadata: dict, ffmpeg: str, ffprobe: str) -> list[Path]:
-    partial = job / "normalized-audio.partial.wav"
+def normalize(source: Path, work: Path, metadata: dict, ffmpeg: str, ffprobe: str) -> list[Path]:
+    partial = work / "normalized-audio.partial.wav"
     command = [
         ffmpeg, "-nostdin", "-hide_banner", "-loglevel", "error", "-xerror", "-y",
         "-i", str(source), "-map", f"0:{metadata['selected_audio_stream']}", "-vn",
         "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", str(partial),
     ]
-    log = job / "ffmpeg.stderr.log"
+    log = work / "ffmpeg.stderr.log"
     with log.open("wb") as error_log:
         subprocess.run(command, stdout=subprocess.DEVNULL, stderr=error_log, check=True)
     decoded = probe(partial, ffprobe)
@@ -108,8 +108,8 @@ def normalize(source: Path, job: Path, metadata: dict, ffmpeg: str, ffprobe: str
         raise ValueError("Normalized audio is not mono 16 kHz PCM.")
     if abs(duration - metadata["source"]["duration_seconds"]) > 0.3:
         raise ValueError("Normalized audio duration differs from the source.")
-    os.replace(partial, job / "normalized-audio.wav")
-    audio = job / "normalized-audio.wav"
+    os.replace(partial, work / "normalized-audio.wav")
+    audio = work / "normalized-audio.wav"
     details = {
         "command": command,
         "duration_seconds": duration,
@@ -117,16 +117,16 @@ def normalize(source: Path, job: Path, metadata: dict, ffmpeg: str, ffprobe: str
         "format": "mono 16 kHz signed 16-bit PCM WAV",
         "timeline_changed": False,
     }
-    atomic_json(job / "audio-metadata.json", details)
-    return [audio, job / "audio-metadata.json", log]
+    atomic_json(work / "audio-metadata.json", details)
+    return [audio, work / "audio-metadata.json", log]
 
 
-def run_whisper(job: Path, config: dict) -> list[Path]:
-    attempt = job / "attempts" / f"whisper_{uuid4().hex}"
+def run_whisper(work: Path, config: dict) -> list[Path]:
+    attempt = work / "attempts" / f"whisper_{uuid4().hex}"
     attempt.mkdir(parents=True)
     base = attempt / "raw-transcript"
     command = [
-        config["whisper"], "-m", config["model"], "-f", str(job / "normalized-audio.wav"),
+        config["whisper"], "-m", config["model"], "-f", str(work / "normalized-audio.wav"),
         "-l", config["language"], "-t", str(config["threads"]), "-p", "1",
         "-bo", "5", "-bs", "5", "-tp", "0", "-tpi", "0.2", "-et", "2.4",
         "-lpt", "-1", "-nth", "0.6", "-fa", "-otxt", "-osrt", "-oj", "-ojf",
@@ -160,10 +160,10 @@ def run_whisper(job: Path, config: dict) -> list[Path]:
         source = base.with_suffix(f".{extension}")
         if not source.is_file() or source.stat().st_size == 0:
             raise ValueError(f"Whisper did not produce raw {extension.upper()} output.")
-        target = job / f"raw-transcript.{extension}"
+        target = work / f"raw-transcript.{extension}"
         atomic_bytes(target, source.read_bytes())
         paths.append(target)
-    native = read_json(job / "raw-transcript.json")
+    native = read_json(work / "raw-transcript.json")
     if not native.get("transcription"):
         raise ValueError("Whisper returned no transcription segments.")
     settings = {
@@ -178,13 +178,13 @@ def run_whisper(job: Path, config: dict) -> list[Path]:
         "threads": config["threads"],
         "gpu_used": gpu_used,
         "metal_fallback_used": not gpu_used,
-        "native_attempt": str(attempt.relative_to(job)),
+        "native_attempt": str(attempt.relative_to(work)),
         "argv": command,
     }
     if settings["multilingual_model"] is not True:
         raise ValueError("The selected Whisper model is not multilingual.")
-    atomic_json(job / "whisper-settings.json", settings)
-    return paths + [job / "whisper-settings.json"]
+    atomic_json(work / "whisper-settings.json", settings)
+    return paths + [work / "whisper-settings.json"]
 
 
 def timestamp_seconds(value: str) -> float:
@@ -278,14 +278,14 @@ def format_time(value: float) -> str:
     return f"{hours:02d}:{minutes:02d}:{seconds:02d}.{millis:03d}"
 
 
-def canonicalize(job: Path) -> list[Path]:
-    native = read_json(job / "raw-transcript.json")
-    audio = read_json(job / "audio-metadata.json")
-    settings = read_json(job / "whisper-settings.json")
+def canonicalize(work: Path) -> list[Path]:
+    native = read_json(work / "raw-transcript.json")
+    audio = read_json(work / "audio-metadata.json")
+    settings = read_json(work / "whisper-settings.json")
     segments, warnings = parse_segments(native, audio["duration_seconds"])
     transcript = {
         "schema_version": 1,
-        "source": read_json(job / "source-metadata.json")["source"],
+        "source": read_json(work / "source-metadata.json")["source"],
         "timestamp_reference": "seconds from recording start",
         "language": {
             "requested": settings["language_requested"],
@@ -299,23 +299,23 @@ def canonicalize(job: Path) -> list[Path]:
             "last_segment_end": segments[-1]["end"],
         },
         "warnings": warnings,
-        "raw_whisper_json_sha256": sha256(job / "raw-transcript.json"),
+        "raw_whisper_json_sha256": sha256(work / "raw-transcript.json"),
     }
-    atomic_json(job / "transcript.json", transcript)
+    atomic_json(work / "transcript.json", transcript)
     lines = [
         f"[{format_time(segment['start'])} --> {format_time(segment['end'])}] {segment['text'].strip()}"
         for segment in segments
     ]
-    atomic_bytes(job / "transcript.txt", ("\n".join(lines) + "\n").encode())
+    atomic_bytes(work / "transcript.txt", ("\n".join(lines) + "\n").encode())
     atomic_json(
-        job / "transcription-checks.json",
+        work / "transcription-checks.json",
         {
             "metrics": transcript["metrics"],
             "warning_counts": dict(Counter(item["code"] for item in warnings)),
             "warnings": warnings,
         },
     )
-    return [job / "transcript.json", job / "transcript.txt", job / "transcription-checks.json"]
+    return [work / "transcript.json", work / "transcript.txt", work / "transcription-checks.json"]
 
 
 def diarization_python(config: dict) -> Path:
@@ -340,39 +340,39 @@ def diarization_python(config: dict) -> Path:
     raise ValueError("Speaker separation environment is not installed.")
 
 
-def run_diarization(job: Path, config: dict) -> list[Path]:
+def run_diarization(work: Path, config: dict) -> list[Path]:
     python = diarization_python(config)
     script = Path(__file__).with_name("diarize.py")
-    output = job / "diarization"
+    output = work / "diarization"
     command = [
-        str(python), str(script), "--audio", str(job / "normalized-audio.wav"),
+        str(python), str(script), "--audio", str(work / "normalized-audio.wav"),
         "--output", str(output), "--device", "cpu",
     ]
     if config.get("min_speakers") is not None:
         command += ["--min-speakers", str(config["min_speakers"])]
     if config.get("max_speakers") is not None:
         command += ["--max-speakers", str(config["max_speakers"])]
-    with (job / "diarization.stdout.log").open("wb") as stdout, (job / "diarization.stderr.log").open("wb") as stderr:
+    with (work / "diarization.stdout.log").open("wb") as stdout, (work / "diarization.stderr.log").open("wb") as stderr:
         subprocess.run(command, stdout=stdout, stderr=stderr, check=True)
     paths = [
         output / "speaker-turns.json",
         output / "speaker-turns.rttm",
         output / "run-summary.json",
-        job / "diarization.stdout.log",
-        job / "diarization.stderr.log",
+        work / "diarization.stdout.log",
+        work / "diarization.stderr.log",
     ]
     if not all(path.is_file() for path in paths):
         raise ValueError("Speaker separation did not produce all expected files.")
     return paths
 
 
-def align_speakers(job: Path, config: dict) -> list[Path]:
+def align_speakers(work: Path, config: dict) -> list[Path]:
     script = Path(__file__).with_name("align.py")
-    output = job / "transcript-with-speakers.json"
-    duration = read_json(job / "audio-metadata.json")["duration_seconds"]
+    output = work / "transcript-with-speakers.json"
+    duration = read_json(work / "audio-metadata.json")["duration_seconds"]
     command = [
-        sys.executable, str(script), "--whisper-json", str(job / "raw-transcript.json"),
-        "--speaker-turns", str(job / "diarization/speaker-turns.json"),
+        sys.executable, str(script), "--whisper-json", str(work / "raw-transcript.json"),
+        "--speaker-turns", str(work / "diarization/speaker-turns.json"),
         "--output", str(output), "--through", str(duration),
     ]
     subprocess.run(command, check=True)
@@ -382,14 +382,46 @@ def align_speakers(job: Path, config: dict) -> list[Path]:
     return [output, text]
 
 
-def mark_stage(job: Path, manifest: dict, stage: str, started: float, paths: list[Path]) -> None:
+def mark_stage(job: Path, work: Path, manifest: dict, stage: str, started: float, paths: list[Path]) -> None:
     manifest["stages"][stage] = {
         "status": "succeeded",
         "ended_at": now(),
         "duration_seconds": round(time.monotonic() - started, 3),
         "artifacts": [artifact(path, job) for path in paths],
     }
-    atomic_json(job / "job.json", manifest)
+    atomic_json(work / "job.json", manifest)
+
+
+def select_job_folder(output_root: Path, source: Path, recipe: dict) -> Path:
+    """Choose a readable, stable folder while keeping colliding jobs separate."""
+    safe_stem = re.sub(r"[/:\\]+", "-", source.stem)
+    safe_stem = re.sub(r"\s+", " ", safe_stem).strip(" .-")[:100] or "Recording"
+    base = output_root / f"{safe_stem} - Transcript"
+    recipe_id = signature(recipe)
+    candidates = [
+        base,
+        output_root / f"{safe_stem} - Transcript ({recipe['source_sha256'][:6]}-{recipe_id[:6]})",
+        output_root / f"{safe_stem} - Transcript ({recipe['source_sha256'][:12]}-{recipe_id[:10]})",
+    ]
+    for candidate in candidates:
+        manifest_path = candidate / "Technical Files" / "job.json"
+        if manifest_path.is_file() and read_json(manifest_path).get("recipe") == recipe:
+            return candidate
+        if not candidate.exists():
+            return candidate
+    raise ValueError("Could not choose a unique output folder for this recording.")
+
+
+def publish_final_files(job: Path, work: Path, speakers: bool) -> list[Path]:
+    transcript = work / ("transcript-with-speakers.txt" if speakers else "transcript.txt")
+    subtitles = work / "raw-transcript.srt"
+    if not transcript.is_file() or not subtitles.is_file():
+        raise ValueError("Final transcript or subtitles are missing.")
+    final_transcript = job / "Transcript.txt"
+    final_subtitles = job / "Subtitles.srt"
+    atomic_bytes(final_transcript, transcript.read_bytes())
+    atomic_bytes(final_subtitles, subtitles.read_bytes())
+    return [final_transcript, final_subtitles]
 
 
 def process(config: dict) -> Path:
@@ -427,13 +459,14 @@ def process(config: dict) -> Path:
         "ffprobe_version": config["ffprobe_version"],
         "code_sha256": code_sha256,
     }
-    safe_stem = re.sub(r"[^A-Za-z0-9._-]+", "-", source.stem).strip("-")[:60] or "recording"
-    job_id = f"{safe_stem}_{source_hash[:12]}_{signature(recipe)[:10]}"
-    job = output_root / job_id
+    job_id = f"{source_hash[:12]}_{signature(recipe)[:10]}"
 
     with exclusive_lock(output_root, job_id):
+        job = select_job_folder(output_root, source, recipe)
         job.mkdir(parents=True, exist_ok=True)
-        manifest_path = job / "job.json"
+        work = job / "Technical Files"
+        work.mkdir(parents=True, exist_ok=True)
+        manifest_path = work / "job.json"
         if manifest_path.is_file():
             manifest = read_json(manifest_path)
             if manifest.get("recipe") != recipe:
@@ -466,20 +499,21 @@ def process(config: dict) -> Path:
                 started = time.monotonic()
                 if stage == "inspect":
                     metadata = inspect_source(source, config["ffprobe"], source_hash)
-                    atomic_json(job / "source-metadata.json", metadata)
-                    paths = [job / "source-metadata.json"]
+                    atomic_json(work / "source-metadata.json", metadata)
+                    paths = [work / "source-metadata.json"]
                 elif stage == "normalize":
-                    paths = normalize(source, job, read_json(job / "source-metadata.json"), config["ffmpeg"], config["ffprobe"])
+                    paths = normalize(source, work, read_json(work / "source-metadata.json"), config["ffmpeg"], config["ffprobe"])
                 elif stage == "whisper":
-                    paths = run_whisper(job, config)
+                    paths = run_whisper(work, config)
                 elif stage == "canonical":
-                    paths = canonicalize(job)
+                    paths = canonicalize(work)
                 elif stage == "diarization":
-                    paths = run_diarization(job, config)
+                    paths = run_diarization(work, config)
                 else:
-                    paths = align_speakers(job, config)
-                mark_stage(job, manifest, stage, started, paths)
+                    paths = align_speakers(work, config)
+                mark_stage(job, work, manifest, stage, started, paths)
                 emit("stage", stage=stage, status="succeeded")
+            publish_final_files(job, work, config["speakers"])
             manifest["status"] = "completed"
             manifest["completed_at"] = now()
             atomic_json(manifest_path, manifest)

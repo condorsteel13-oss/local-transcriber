@@ -73,13 +73,11 @@
 @property NSMutableArray<NSNumber *> *batchDurations;
 @property NSMutableArray<NSNumber *> *batchEstimates;
 @property NSMutableArray<NSURL *> *resultURLs;
-@property NSMutableArray<NSURL *> *readableResultURLs;
 @property NSUInteger batchIndex;
 @property NSUInteger succeededCount;
 @property NSUInteger failedCount;
 @property NSURL *outputURL;
 @property NSURL *resultURL;
-@property NSURL *readableResultsURL;
 @property NSTask *task;
 @property NSMutableString *stdoutBuffer;
 @property NSTimer *progressTimer;
@@ -463,8 +461,9 @@
     double audioTotal = 0;
     double workTotal = 0;
     for (NSURL *item in items) {
-        NSURL *jobURL = [item URLByAppendingPathComponent:@"job.json"];
-        NSURL *sourceURL = [item URLByAppendingPathComponent:@"source-metadata.json"];
+        NSURL *technical = [item URLByAppendingPathComponent:@"Technical Files" isDirectory:YES];
+        NSURL *jobURL = [technical URLByAppendingPathComponent:@"job.json"];
+        NSURL *sourceURL = [technical URLByAppendingPathComponent:@"source-metadata.json"];
         NSData *jobData = [NSData dataWithContentsOfURL:jobURL];
         NSData *sourceData = [NSData dataWithContentsOfURL:sourceURL];
         if (!jobData || !sourceData) continue;
@@ -574,7 +573,6 @@
     }
     self.batchURLs = [self.sourceURLs copy];
     self.resultURLs = [NSMutableArray array];
-    self.readableResultURLs = [NSMutableArray array];
     self.batchIndex = 0;
     self.succeededCount = 0;
     self.failedCount = 0;
@@ -598,7 +596,6 @@
     self.overallProgress.hidden = NO;
     self.timingLabel.hidden = NO;
     self.resultURL = nil;
-    self.readableResultsURL = [self createReadableResultsFolder];
     self.logView.string = @"";
     [self.stdoutBuffer setString:@""];
     self.startButton.enabled = NO;
@@ -713,9 +710,7 @@
     self.languagePopup.enabled = YES;
     self.speakerCheckbox.enabled = YES;
     self.showButton.hidden = self.resultURLs.count == 0;
-    if (self.readableResultURLs.count == 1) self.resultURL = self.readableResultURLs.firstObject;
-    else if (self.readableResultURLs.count > 1) self.resultURL = self.readableResultsURL;
-    else if (self.resultURLs.count == 1) self.resultURL = self.resultURLs.firstObject;
+    if (self.resultURLs.count == 1) self.resultURL = self.resultURLs.firstObject;
     else if (self.resultURLs.count > 1) self.resultURL = self.outputURL;
     if (self.failedCount == 0) {
         self.statusLabel.textColor = NSColor.secondaryLabelColor;
@@ -779,81 +774,11 @@
             NSURL *result = [NSURL fileURLWithPath:event[@"output_directory"]];
             [self.resultURLs addObject:result];
             self.resultURL = result;
-            if (self.batchIndex < self.batchURLs.count && self.readableResultsURL) {
-                NSURL *readable = [self createReadableResultFromJob:result source:self.batchURLs[self.batchIndex]];
-                if (readable) [self.readableResultURLs addObject:readable];
-            }
         } else if ([kind isEqualToString:@"failed"]) {
             self.statusLabel.textColor = NSColor.systemRedColor;
             self.statusLabel.stringValue = event[@"message"] ?: @"Transcription failed.";
         }
     }
-}
-
-- (NSURL *)createReadableResultsFolder {
-    NSFileManager *files = NSFileManager.defaultManager;
-    [files createDirectoryAtURL:self.outputURL withIntermediateDirectories:YES attributes:nil error:nil];
-    NSDateFormatter *formatter = [[NSDateFormatter alloc] init];
-    formatter.locale = [NSLocale localeWithLocaleIdentifier:@"en_CA_POSIX"];
-    formatter.dateFormat = @"yyyy-MM-dd 'at' HH.mm.ss";
-    NSString *base = [NSString stringWithFormat:@"Transcripts %@", [formatter stringFromDate:NSDate.date]];
-    NSURL *folder = [self.outputURL URLByAppendingPathComponent:base isDirectory:YES];
-    NSUInteger suffix = 2;
-    while ([files fileExistsAtPath:folder.path]) {
-        folder = [self.outputURL URLByAppendingPathComponent:
-            [NSString stringWithFormat:@"%@ (%lu)", base, (unsigned long)suffix++] isDirectory:YES];
-    }
-    NSError *error = nil;
-    if (![files createDirectoryAtURL:folder withIntermediateDirectories:YES attributes:nil error:&error]) {
-        [self appendLog:[NSString stringWithFormat:@"WARNING: Could not create the simple results folder: %@\n", error.localizedDescription]];
-        return nil;
-    }
-    NSString *guide = @"LOCAL TRANSCRIBER RESULTS\n\n"
-        "Each recording has its own folder.\n\n"
-        "Transcript.txt is the main file to read. When speaker separation was enabled, it includes anonymous speaker labels.\n\n"
-        "Subtitles.srt contains timed captions for compatible video players and editors.\n\n"
-        "The Local Transcriber folder also retains technical processing files so interrupted work can resume safely. You normally do not need to open those files.\n";
-    [guide writeToURL:[folder URLByAppendingPathComponent:@"README - Start Here.txt"]
-        atomically:YES encoding:NSUTF8StringEncoding error:nil];
-    return folder;
-}
-
-- (NSString *)safeResultNameForSource:(NSURL *)source {
-    NSString *name = source.lastPathComponent.stringByDeletingPathExtension;
-    NSCharacterSet *forbidden = [NSCharacterSet characterSetWithCharactersInString:@"/:\\"];
-    name = [[name componentsSeparatedByCharactersInSet:forbidden] componentsJoinedByString:@"-"];
-    name = [name stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
-    if (!name.length) name = @"Recording";
-    if (name.length > 120) name = [name substringToIndex:120];
-    return name;
-}
-
-- (NSURL *)createReadableResultFromJob:(NSURL *)job source:(NSURL *)source {
-    NSFileManager *files = NSFileManager.defaultManager;
-    NSString *base = [self safeResultNameForSource:source];
-    NSURL *folder = [self.readableResultsURL URLByAppendingPathComponent:base isDirectory:YES];
-    NSUInteger suffix = 2;
-    while ([files fileExistsAtPath:folder.path]) {
-        folder = [self.readableResultsURL URLByAppendingPathComponent:
-            [NSString stringWithFormat:@"%@ (%lu)", base, (unsigned long)suffix++] isDirectory:YES];
-    }
-    NSError *error = nil;
-    if (![files createDirectoryAtURL:folder withIntermediateDirectories:YES attributes:nil error:&error]) {
-        [self appendLog:[NSString stringWithFormat:@"WARNING: Could not organize the readable transcript: %@\n", error.localizedDescription]];
-        return nil;
-    }
-    NSURL *speakerTranscript = [job URLByAppendingPathComponent:@"transcript-with-speakers.txt"];
-    NSURL *plainTranscript = [job URLByAppendingPathComponent:@"transcript.txt"];
-    NSURL *preferred = [files fileExistsAtPath:speakerTranscript.path] ? speakerTranscript : plainTranscript;
-    if (![files copyItemAtURL:preferred toURL:[folder URLByAppendingPathComponent:@"Transcript.txt"] error:&error]) {
-        [self appendLog:[NSString stringWithFormat:@"WARNING: Could not copy the readable transcript: %@\n", error.localizedDescription]];
-        return nil;
-    }
-    NSURL *subtitles = [job URLByAppendingPathComponent:@"raw-transcript.srt"];
-    if ([files fileExistsAtPath:subtitles.path]) {
-        [files copyItemAtURL:subtitles toURL:[folder URLByAppendingPathComponent:@"Subtitles.srt"] error:nil];
-    }
-    return folder;
 }
 
 - (NSString *)stageLabel:(NSString *)stage status:(NSString *)status {

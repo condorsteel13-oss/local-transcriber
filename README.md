@@ -15,12 +15,16 @@ recordings from running.
 
 ## Outputs
 
-`Show Results` opens a simple, dated results folder. Each recording has a
-clearly named subfolder containing only `Transcript.txt` and `Subtitles.srt`.
-When speaker separation is enabled, `Transcript.txt` is the speaker-labelled
-version.
+Each recording gets one clearly named result folder based on the original audio
+or video filename. `Show Results` opens that folder for a single recording, or
+the main results location after a batch. The result folder contains exactly:
 
-Each recording gets a separate content-addressed job folder containing:
+- `Transcript.txt`: the final transcript; it includes anonymous speaker labels
+  when speaker separation was enabled
+- `Subtitles.srt`: the timestamped subtitles
+- `Technical Files`: all processing artifacts needed for verification and resume
+
+The `Technical Files` folder contains:
 
 - `raw-transcript.txt`, `.srt`, and `.json`: untouched whisper.cpp outputs
 - `transcript.txt` and `transcript.json`: normalized timestamped transcript
@@ -29,7 +33,9 @@ Each recording gets a separate content-addressed job folder containing:
 - `diarization/speaker-turns.json` and `.rttm` for raw speaker timing
 
 The source recording is read-only. Processing is resumable: verified completed
-stages are reused if the same recording and settings are run again.
+stages are reused if the same recording and settings are run again. If two jobs
+would have the same visible name but different contents or settings, a short
+identifier is added to keep both results separate.
 
 ## Language behavior
 
@@ -68,7 +74,7 @@ packages. Community-1 requires a free Hugging Face account and acceptance of
 the [model conditions](https://huggingface.co/pyannote/speaker-diarization-community-1).
 No Hugging Face token is stored in this repository.
 
-Version 1.0.0 is ad-hoc signed and is not Apple-notarized. That is why macOS may
+Version 1.1.0 is ad-hoc signed and is not Apple-notarized. That is why macOS may
 require the Control-click Open step. A future Developer ID release can remove
 that extra first-launch step.
 

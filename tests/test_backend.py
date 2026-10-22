@@ -93,14 +93,20 @@ base.with_suffix('.srt').write_text('1\\n00:00:00,000 --> 00:00:01,000\\nBonjour
                 "diarization_python": None,
             }
             job = process(dict(config))
-            self.assertEqual(read_json(job / "job.json")["status"], "completed")
-            self.assertEqual(read_json(job / "whisper-settings.json")["language_detected"], "fr")
-            self.assertEqual((job / "raw-transcript.txt").read_text(), "Bonjour, ça va?\n")
-            self.assertIn("Bonjour, ça va?", (job / "transcript.txt").read_text())
-            raw_hash = (job / "raw-transcript.json").read_bytes()
+            technical = job / "Technical Files"
+            self.assertEqual(read_json(technical / "job.json")["status"], "completed")
+            self.assertEqual(read_json(technical / "whisper-settings.json")["language_detected"], "fr")
+            self.assertEqual((technical / "raw-transcript.txt").read_text(), "Bonjour, ça va?\n")
+            self.assertIn("Bonjour, ça va?", (job / "Transcript.txt").read_text())
+            self.assertTrue((job / "Subtitles.srt").is_file())
+            self.assertEqual(
+                sorted(path.name for path in job.iterdir()),
+                ["Subtitles.srt", "Technical Files", "Transcript.txt"],
+            )
+            raw_hash = (technical / "raw-transcript.json").read_bytes()
             resumed = process(dict(config))
             self.assertEqual(resumed, job)
-            self.assertEqual((job / "raw-transcript.json").read_bytes(), raw_hash)
+            self.assertEqual((technical / "raw-transcript.json").read_bytes(), raw_hash)
 
 
 if __name__ == "__main__":

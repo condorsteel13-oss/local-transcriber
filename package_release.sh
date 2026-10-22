@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT="${0:A:h}"
-VERSION="1.0.0"
+VERSION="1.1.0"
 NAME="Local-Transcriber-$VERSION-macOS-arm64"
 RELEASE="$ROOT/release"
 STAGING="$RELEASE/$NAME"

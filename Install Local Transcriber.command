@@ -10,7 +10,7 @@ MODEL="$MODEL_DIR/ggml-medium.bin"
 MODEL_URL="https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-medium.bin"
 MODEL_SHA256="6c14d5adee5f86394037b4e4e8b59f1673b6cee10e3cf0b11bbdbee79c156208"
 
-print "Local Transcriber 1.0.0 setup"
+print "Local Transcriber 1.1.0 setup"
 print "=============================="
 print
 
