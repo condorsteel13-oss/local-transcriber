@@ -537,6 +537,20 @@ def default_model() -> Path:
     return next((path for path in candidates if path.is_file()), candidates[0])
 
 
+def default_threads() -> int:
+    cores = None
+    if sys.platform == "darwin":
+        # Whisper scales with performance cores; efficiency cores slow the run down.
+        probe = subprocess.run(
+            ["/usr/sbin/sysctl", "-n", "hw.perflevel0.physicalcpu"],
+            capture_output=True, text=True,
+        )
+        reported = probe.stdout.strip()
+        if probe.returncode == 0 and reported.isdigit():
+            cores = int(reported)
+    return max(4, min(16, cores or os.cpu_count() or 4))
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Local English/French audio transcription")
     parser.add_argument("source")
@@ -546,7 +560,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--speakers", action="store_true")
     parser.add_argument("--min-speakers", type=int)
     parser.add_argument("--max-speakers", type=int)
-    parser.add_argument("--threads", type=int, default=max(4, min(8, os.cpu_count() or 4)))
+    parser.add_argument("--threads", type=int, default=default_threads())
     parser.add_argument("--whisper", default="whisper-cli")
     parser.add_argument("--ffmpeg", default="ffmpeg")
     parser.add_argument("--ffprobe", default="ffprobe")
