@@ -1,0 +1,76 @@
+{
+  "description": "Behavior of backend/align.py before scoped-overlap-v1, captured on synthetic inputs. These are code-inspection results, not human listening and not acoustic accuracy.",
+  "git_head": "343b548f039e945eab66dd1c15ea9a3d57e5fa5c",
+  "code_sha256": {
+    "backend/align.py": "0426f6e5e3b45eb56a9bd458e0584933b844110651f29a16b8e23fd704233cee",
+    "backend/diarize.py": "29a213d05dfc8daea5534dec0684b954cf170829f5d3ff388fa28c7780044514",
+    "backend/transcribe.py": "4dda6a6b8a064fb319f7142dbf4a0dfb276ebc441c75001025ed8c585c54fa9a",
+    "backend/core.py": "6b6e3f8528bb9ea9b7e160a4fc190e6b4d34ac66dad889f3bb4314801a03d262"
+  },
+  "execution": "python3 backend/align.py on /tmp/diarization-baseline before any policy edit. Raw JSON hashes are machine-specific because they embed absolute paths; the normalized behavior below is the snapshot.",
+  "policy_observations": [
+    "Alignment read exclusive_turns only and ignored overlap_aware_turns.",
+    "Equal exclusive overlap was awarded to the first turn, SPEAKER_00.",
+    "A zero-length token contained by two turns was awarded to the first turn.",
+    "A token in a gap within 1.5 s of two speakers was awarded to the nearer one.",
+    "A token with no offsets was placed at 0 ms and inherited the speaker active there.",
+    "Punctuation inside the next speaker was overwritten with the previous speaker.",
+    "A token starting at or after --through was omitted from the word count.",
+    "A reversed token was treated as a point at its start and assigned.",
+    "Status remained review_preview for unassigned speech and for these failures.",
+    "Speaker ids were raw model labels with no recording or revision scope."
+  ],
+  "cases": {
+    "equal_overlap": {
+      "status": "review_preview",
+      "utterances": [{"speaker_id": "SPEAKER_00", "text": "hello"}],
+      "overlap_assigned_words": 1,
+      "word_count": 1
+    },
+    "point_double_contain": {
+      "status": "review_preview",
+      "utterances": [{"speaker_id": "SPEAKER_00", "text": "ah"}],
+      "contained_words": 1
+    },
+    "gap_both_near": {
+      "status": "review_preview",
+      "utterances": [{"speaker_id": "SPEAKER_00", "text": "wait"}],
+      "nearest_assigned_words": 1
+    },
+    "missing_offsets": {
+      "status": "review_preview",
+      "utterances": [{"speaker_id": "SPEAKER_00", "text": "ghost real"}],
+      "word_count": 2
+    },
+    "punctuation_crosses": {
+      "status": "review_preview",
+      "utterances": [{"speaker_id": "SPEAKER_00", "text": "Hello."}],
+      "punctuation_assigned_tokens": 1
+    },
+    "after_through": {
+      "status": "review_preview",
+      "utterances": [{"speaker_id": "SPEAKER_00", "text": "early"}],
+      "word_count": 1
+    },
+    "reversed_token": {
+      "status": "review_preview",
+      "utterances": [{"speaker_id": "SPEAKER_00", "text": "bad"}],
+      "contained_words": 1
+    },
+    "no_turns": {
+      "status": "review_preview",
+      "utterances": [{"speaker_id": null, "text": "alone"}],
+      "unassigned_words": 1
+    },
+    "unique_overlap": {
+      "status": "review_preview",
+      "utterances": [{"speaker_id": "SPEAKER_00", "text": "yes"}],
+      "overlap_assigned_words": 1
+    },
+    "far_gap": {
+      "status": "review_preview",
+      "utterances": [{"speaker_id": null, "text": "echo"}],
+      "unassigned_words": 1
+    }
+  }
+}

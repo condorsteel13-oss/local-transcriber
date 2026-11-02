@@ -10,10 +10,13 @@ import os
 import platform
 import sys
 import tempfile
+import uuid
 import wave
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+from attribution import classify_turns, stamp_diarization
 
 MODEL_ID = "pyannote/speaker-diarization-community-1"
 
@@ -107,6 +110,63 @@ def rttm_text(rows: list[dict[str, Any]], uri: str) -> str:
     return "\n".join(lines) + ("\n" if lines else "")
 
 
+def publish_diarization(output: Path, payload: dict[str, Any]) -> dict[str, Any]:
+    """Write raw turns, then a summary. Failures leave an existing bundle untouched."""
+    if not isinstance(payload, dict):
+        raise SystemExit("Diarization payload is not an object.")
+    if not isinstance(payload.get("exclusive_turns"), list) or not isinstance(
+        payload.get("overlap_aware_turns"), list
+    ):
+        raise SystemExit("Diarization payload is missing exclusive or overlap-aware turns.")
+    try:
+        stamped = stamp_diarization(payload)
+        exclusive_accepted, exclusive_rejected = classify_turns(stamped["exclusive_turns"])
+        overlap_accepted, overlap_rejected = classify_turns(stamped["overlap_aware_turns"])
+        stamped["speakers"] = sorted({row["speaker_id"] for row in exclusive_accepted})
+        stamped["speakers_overlap_aware"] = sorted({row["speaker_id"] for row in overlap_accepted})
+        stamped["speaker_count"] = len(stamped["speakers"])
+        encoded = json.dumps(stamped, indent=2, ensure_ascii=False, allow_nan=False) + "\n"
+    except (TypeError, ValueError) as error:
+        raise SystemExit(f"Diarization payload is not finite JSON: {error}") from error
+    validation = (
+        "ok" if not exclusive_rejected and not overlap_rejected else "rejected_turns_present"
+    )
+    exclusive_speakers = sorted({row["speaker_id"] for row in exclusive_accepted})
+    overlap_speakers = sorted({row["speaker_id"] for row in overlap_accepted})
+    audio_meta = stamped.get("audio") if isinstance(stamped.get("audio"), dict) else {}
+    stem = Path(str(audio_meta.get("path") or "recording")).stem or "recording"
+    summary = {
+        "status": "outputs_written",
+        "attribution_assessed": False,
+        "process_exit_means_attribution_correct": False,
+        "turn_validation": validation,
+        "speaker_count": len(exclusive_speakers),
+        "speaker_count_exclusive": len(exclusive_speakers),
+        "speaker_count_overlap_aware": len(overlap_speakers),
+        "exclusive_turn_count": len(stamped["exclusive_turns"]),
+        "overlap_aware_turn_count": len(stamped["overlap_aware_turns"]),
+        "recording_id": stamped["provenance"]["recording_id"],
+        "run_id": stamped["run_id"],
+        "output": str(output / "speaker-turns.json"),
+    }
+    attempt = output / "attempts" / f"diarize_{uuid.uuid4().hex}"
+    attempt.mkdir(parents=True, exist_ok=False)
+    files = {
+        "speaker-turns.json": encoded,
+        "speaker-turns.rttm": rttm_text(exclusive_accepted, stem),
+        "speaker-turns-overlap.rttm": rttm_text(overlap_accepted, stem),
+        "run-summary.json": json.dumps(summary, indent=2) + "\n",
+    }
+    for name, contents in files.items():
+        atomic_text(attempt / name, contents)
+    output.mkdir(parents=True, exist_ok=True)
+    for name, contents in files.items():
+        atomic_text(output / name, contents)
+        if (output / name).read_text(encoding="utf-8") != contents:
+            raise SystemExit(f"Diarization commit mismatch for {name}")
+    return summary
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--audio", type=Path, required=True)
@@ -164,7 +224,6 @@ def main() -> int:
     result = pipeline(audio_input, **inference)
     standard = turn_rows(result.speaker_diarization, args.source_offset)
     exclusive = turn_rows(result.exclusive_speaker_diarization, args.source_offset)
-    speakers = sorted({row["speaker_id"] for row in exclusive})
     finished = datetime.now(timezone.utc)
 
     payload = {
@@ -181,8 +240,6 @@ def main() -> int:
             "speaker_constraints": inference,
             "telemetry_enabled": os.environ.get("PYANNOTE_METRICS_ENABLED") != "0",
         },
-        "speakers": speakers,
-        "speaker_count": len(speakers),
         "exclusive_turns": exclusive,
         "overlap_aware_turns": standard,
         "started_at": started.isoformat(),
@@ -194,27 +251,13 @@ def main() -> int:
             "torch": version("torch"),
         },
     }
-
-    output.mkdir(parents=True, exist_ok=True)
-    atomic_text(
-        output / "speaker-turns.json",
-        json.dumps(payload, indent=2, ensure_ascii=False) + "\n",
+    summary = publish_diarization(output, payload)
+    print(
+        "Detected "
+        f"{summary['speaker_count_overlap_aware']} overlap-aware speakers and "
+        f"{summary['speaker_count_exclusive']} exclusive speakers. "
+        "Speaker attribution accuracy is unmeasured."
     )
-    atomic_text(output / "speaker-turns.rttm", rttm_text(exclusive, audio.stem))
-    atomic_text(
-        output / "run-summary.json",
-        json.dumps(
-            {
-                "status": "completed",
-                "speaker_count": len(speakers),
-                "exclusive_turn_count": len(exclusive),
-                "output": str(output / "speaker-turns.json"),
-            },
-            indent=2,
-        )
-        + "\n",
-    )
-    print(f"Detected {len(speakers)} speakers in {len(exclusive)} exclusive turns.")
     print(output / "speaker-turns.json")
     return 0
 

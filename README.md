@@ -30,7 +30,8 @@ The `Technical Files` folder contains:
 - `transcript.txt` and `transcript.json`: normalized timestamped transcript
 - `source-metadata.json`, `audio-metadata.json`, settings, checks, and logs
 - `transcript-with-speakers.txt` and `.json` when speaker separation is enabled
-- `diarization/speaker-turns.json` and `.rttm` for raw speaker timing
+- `diarization/speaker-turns.json`, `speaker-turns.rttm`, and
+  `speaker-turns-overlap.rttm` for raw speaker timing
 
 The source recording is read-only. Processing is resumable: verified completed
 stages are reused if the same recording and settings are run again. If two jobs
@@ -51,10 +52,23 @@ and poor audio can still be transcribed incorrectly.
 ## Speaker behavior
 
 Community-1 predicts anonymous labels such as `SPEAKER_00`. It does not know
-real names. Short interruptions, overlapping speech, and similar voices may
-produce imperfect boundaries. The app preserves the raw transcript and raw
-speaker turns so alignment can be improved without retranscribing the audio.
-The installed Community-1 model is used in offline mode during routine jobs.
+real names. A label belongs to one recording and one diarization run; the same
+label in another file is not the same person.
+
+Alignment keeps the raw speaker turns separate from the transcript. A word
+stays `AMBIGUOUS` when two speakers each overlap it by more than 20 ms, and
+when it sits in a gap within 1.5 seconds of two speakers. It is not given to
+whichever turn covers more of the word. Missing or reversed word times are
+withheld rather than placed at the start of the recording. The transcript
+header says `review required`, `attribution uncertain`, or `partial result`.
+A finished job does not mean those labels are correct, and the app does not
+measure acoustic accuracy.
+
+Short interruptions, similar voices, and noise can still be wrong. The raw
+transcript and raw speaker turns are kept so alignment can be repeated without
+retranscribing. The installed Community-1 model is used in offline mode during
+routine jobs. Diarization runs on the full normalized recording; it does not
+split the file into chunks.
 
 ## Install the release
 

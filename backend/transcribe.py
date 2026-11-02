@@ -16,6 +16,7 @@ import sys
 import time
 from uuid import uuid4
 
+from attribution import policy_record
 from core import (
     artifact,
     atomic_bytes,
@@ -357,6 +358,7 @@ def run_diarization(work: Path, config: dict) -> list[Path]:
     paths = [
         output / "speaker-turns.json",
         output / "speaker-turns.rttm",
+        output / "speaker-turns-overlap.rttm",
         output / "run-summary.json",
         work / "diarization.stdout.log",
         work / "diarization.stderr.log",
@@ -366,20 +368,48 @@ def run_diarization(work: Path, config: dict) -> list[Path]:
     return paths
 
 
+def assert_audio_unchanged(work: Path) -> None:
+    metadata = read_json(work / "audio-metadata.json")
+    audio = work / "normalized-audio.wav"
+    if sha256(audio) != metadata["sha256"]:
+        raise ValueError("Normalized audio changed during processing.")
+
+
 def align_speakers(work: Path, config: dict) -> list[Path]:
     script = Path(__file__).with_name("align.py")
     output = work / "transcript-with-speakers.json"
-    duration = read_json(work / "audio-metadata.json")["duration_seconds"]
+    audio_metadata = read_json(work / "audio-metadata.json")
+    turns_path = work / "diarization/speaker-turns.json"
+    turns = read_json(turns_path)
+    claimed = turns.get("audio", {}).get("sha256") if isinstance(turns.get("audio"), dict) else None
+    if claimed != audio_metadata["sha256"]:
+        raise ValueError(
+            "Speaker turns do not carry the normalized audio hash. "
+            "Refusing to attribute speakers without that provenance."
+        )
     command = [
         sys.executable, str(script), "--whisper-json", str(work / "raw-transcript.json"),
-        "--speaker-turns", str(work / "diarization/speaker-turns.json"),
-        "--output", str(output), "--through", str(duration),
+        "--speaker-turns", str(turns_path),
+        "--output", str(output), "--through", str(audio_metadata["duration_seconds"]),
     ]
-    subprocess.run(command, check=True)
+    completed = subprocess.run(command, capture_output=True)
+    (work / "align.stdout.log").write_bytes(completed.stdout)
+    (work / "align.stderr.log").write_bytes(completed.stderr)
+    if completed.returncode != 0:
+        detail = completed.stderr.decode(errors="replace").strip() or completed.stdout.decode(errors="replace").strip()
+        raise ValueError(detail or "Speaker alignment failed.")
     text = output.with_suffix(".txt")
     if not output.is_file() or not text.is_file():
         raise ValueError("Speaker alignment did not produce expected files.")
-    return [output, text]
+    paths = [output, text, work / "align.stdout.log", work / "align.stderr.log"]
+    alignment = read_json(output)
+    if alignment.get("accuracy") != "UNMEASURED" or alignment.get("status") not in {
+        "review_required",
+        "attribution_uncertain",
+        "partial_result",
+    }:
+        raise ValueError("Speaker alignment did not record an explicit review status.")
+    return paths
 
 
 def mark_stage(job: Path, work: Path, manifest: dict, stage: str, started: float, paths: list[Path]) -> None:
@@ -458,6 +488,7 @@ def process(config: dict) -> Path:
         "ffmpeg_version": config["ffmpeg_version"],
         "ffprobe_version": config["ffprobe_version"],
         "code_sha256": code_sha256,
+        "assignment_policy": policy_record(),
     }
     job_id = f"{source_hash[:12]}_{signature(recipe)[:10]}"
 
@@ -508,11 +539,35 @@ def process(config: dict) -> Path:
                 elif stage == "canonical":
                     paths = canonicalize(work)
                 elif stage == "diarization":
+                    assert_audio_unchanged(work)
                     paths = run_diarization(work, config)
+                    summary = read_json(work / "diarization/run-summary.json")
+                    manifest.setdefault("warnings", []).append(
+                        {
+                            "code": "speaker_diarization",
+                            "status": summary.get("status"),
+                            "turn_validation": summary.get("turn_validation"),
+                            "attribution_assessed": False,
+                            "reason": "Diarization output was written. Speaker labels are not identities and were not scored.",
+                        }
+                    )
                 else:
+                    assert_audio_unchanged(work)
                     paths = align_speakers(work, config)
+                    alignment = read_json(work / "transcript-with-speakers.json")
+                    manifest.setdefault("warnings", []).append(
+                        {
+                            "code": "speaker_attribution",
+                            "status": alignment.get("status"),
+                            "reason": alignment.get("status_reason"),
+                            "review_required": True,
+                            "accuracy": "UNMEASURED",
+                        }
+                    )
                 mark_stage(job, work, manifest, stage, started, paths)
                 emit("stage", stage=stage, status="succeeded")
+            if sha256(source) != source_hash:
+                raise ValueError("The recording changed during processing.")
             publish_final_files(job, work, config["speakers"])
             manifest["status"] = "completed"
             manifest["completed_at"] = now()
