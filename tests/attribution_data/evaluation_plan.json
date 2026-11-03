@@ -1,0 +1,43 @@
+{
+  "plan_id": "speaker-attribution-2026-11-02",
+  "frozen_before_candidate_tuning": true,
+  "acoustic_accuracy": "UNMEASURED",
+  "human_references": "none — synthetic structural references only; not listening",
+  "independent_time_scorer": "unavailable; pyannote.metrics was not installed and was not added",
+  "development_cases_are": "regression checks for demonstrated baseline failures",
+  "heldout_cases_are": "structural checks written with the policy, not used to choose the collar",
+  "policy": {
+    "id": "scoped-overlap-v1",
+    "boundary_collar_seconds": 0.02,
+    "boundary_slack_seconds": 0.02,
+    "long_span_seconds": 1.0,
+    "default_maximum_gap_seconds": 1.5,
+    "default_utterance_gap_seconds": 1.25
+  },
+  "success_for_this_change": [
+    "Dev and held-out structural expectations pass without editing this plan.",
+    "Equal overlap and two-speaker containment are no longer forced to the first label.",
+    "Missing word times are not placed at 0 s.",
+    "Scoped ids differ across recording hash and across diarization run id.",
+    "A failed alignment does not replace an existing output.",
+    "Token wording is unchanged.",
+    "No acoustic accuracy number is reported."
+  ],
+  "adoption_bar_not_met_without": [
+    "Human speaker references collected before seeing model hypotheses.",
+    "A scored sample that reports coverage beside accuracy.",
+    "Confirmation that Community-1 overlap-aware turns are present on real recordings."
+  ],
+  "word_score": {
+    "time_tolerance_seconds": 0.001,
+    "mapping": "explicit; missing labels raise rather than a guessed permutation",
+    "unique_assignment_rate": "answered / decidable reference words",
+    "accuracy_on_answered": "correct unique answers / answered words",
+    "overlap": "a multi-speaker reference matched by a non-unique hypothesis set is overlap_preserved and abstains; a single speaker on that word is overlap_collapsed"
+  },
+  "speaker_time_error_ratio": {
+    "overlap": "unsupported; raises ScoringError",
+    "collar": "midpoints within collar seconds of a reference boundary are unscored",
+    "ratio": "(miss + false_alarm + confusion) / scored reference speech"
+  }
+}

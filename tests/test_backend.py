@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+import shutil
 import stat
 import sys
 import tempfile
@@ -88,8 +89,12 @@ base.with_suffix('.srt').write_text('1\\n00:00:00,000 --> 00:00:01,000\\nBonjour
                 "max_speakers": None,
                 "threads": 4,
                 "whisper": str(whisper),
-                "ffmpeg": "/opt/homebrew/bin/ffmpeg",
-                "ffprobe": "/opt/homebrew/bin/ffprobe",
+                "ffmpeg": "/opt/homebrew/bin/ffmpeg"
+                if Path("/opt/homebrew/bin/ffmpeg").is_file()
+                else shutil.which("ffmpeg"),
+                "ffprobe": "/opt/homebrew/bin/ffprobe"
+                if Path("/opt/homebrew/bin/ffprobe").is_file()
+                else shutil.which("ffprobe"),
                 "diarization_python": None,
             }
             job = process(dict(config))
